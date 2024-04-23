@@ -6627,17 +6627,18 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 
     *s = sumf;
 
-#elif defined __AVX2__
+#elif defined(__AVX2__) && defined(__F16C__)
 
     const __m256i m4 = _mm256_set1_epi8(0xF);
 
     __m256 acc = _mm256_setzero_ps();
     __m128 acc_m = _mm_setzero_ps();
 
-   for (int i = 0; i < nb; ++i) {
-
-        const float d = y[i].d * GGML_FP16_TO_FP32(x[i].d);
-        const float dmin = -y[i].d * GGML_FP16_TO_FP32(x[i].dmin);
+    for (int i = 0; i < nb; ++i) {
+        //Not using the macro because this is has better performance.
+        //  Also, these two lines should be grouped up into fewer AVX calls.
+        const float d = y[i].d * _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(x[i].d)));
+        const float dmin = -y[i].d * _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(x[i].dmin)));
 
         memcpy(utmp, x[i].scales, 12);
         utmp[3] = ((utmp[2] >> 4) & kmask2) | (((utmp[1] >> 6) & kmask3) << 4);
