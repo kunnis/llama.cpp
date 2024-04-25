@@ -18251,30 +18251,34 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads, int n_cur_
 }
 
 static void ggml_graph_compute_thread_sync_node(int * node_n, struct ggml_compute_state * state, const bool do_yield) {
+    UNUSED(do_yield);
     // wait for other threads to finish
     const int last_node_n = * node_n;
+    int spinCounter = 0;
 
     while (true) {
-        if (do_yield) {
-            sched_yield();
-        }
-
         * node_n = atomic_load(&state->shared->node_n);
         if (* node_n != last_node_n) break;
+
+        spinCounter++;
+        if (spinCounter > 2000)
+            sched_yield();
     }
 }
 
 static void ggml_graph_compute_thread_sync_task(int * task_phase, struct ggml_compute_state * state, const bool do_yield) {
+    UNUSED(do_yield);
     // wait for other threads to finish
     const int last_task_phase = * task_phase;
+    int spinCounter = 0;
 
     while (true) {
-        if (do_yield) {
-            sched_yield();
-        }
-
         * task_phase = atomic_load(&state->shared->node_task);
         if (* task_phase != last_task_phase) break;
+
+        spinCounter++;
+        if (spinCounter > 2000)
+            sched_yield();
     }
 }
 
