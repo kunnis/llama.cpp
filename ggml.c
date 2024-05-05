@@ -11040,8 +11040,8 @@ UseGgmlGemm2:;
 
     while (current_chunk < nchunk0 * nchunk1)
     {
-        const int64_t ith0 = current_chunk % nchunk0;
-        const int64_t ith1 = current_chunk / nchunk0;
+        const int64_t ith1 = current_chunk % nchunk1;
+        const int64_t ith0 = current_chunk / nchunk1;
 
         const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
         const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
