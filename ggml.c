@@ -11036,12 +11036,16 @@ UseGgmlGemm2:;
     //Chunk in both directions.
     const int64_t nchunk1 = (nr1 + chunk_size - 1) / chunk_size;
 
-    int current_chunk = atomic_fetch_add(&state->shared->current_chunk, 1);
+    const int64_t total_chunks = nchunk0 * nchunk1;
 
-    while (current_chunk < nchunk0 * nchunk1)
+    int number_of_chunks_to_checkout = total_chunks / nth / 2;
+    int checked_out_chunk = atomic_fetch_add(&state->shared->current_chunk, number_of_chunks_to_checkout);
+    int checkout_idx = 0;
+
+    while (checked_out_chunk + checkout_idx < total_chunks)
     {
-        const int64_t ith0 = current_chunk % nchunk0;
-        const int64_t ith1 = current_chunk / nchunk0;
+        const int64_t ith0 = (checked_out_chunk + checkout_idx) % nchunk0;
+        const int64_t ith1 = (checked_out_chunk + checkout_idx) / nchunk0;
 
         const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
         const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
@@ -11054,7 +11058,15 @@ UseGgmlGemm2:;
 
         ggml_compute_forward_mul_mat_one_chunk(params, dst, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
 
-        current_chunk = atomic_fetch_add(&state->shared->current_chunk, 1);
+        checkout_idx++;
+
+        if (checkout_idx >= number_of_chunks_to_checkout)
+        {
+            number_of_chunks_to_checkout = 1;
+            checked_out_chunk = atomic_fetch_add(&state->shared->current_chunk, number_of_chunks_to_checkout);
+            checkout_idx = 0;
+        }
+
 #ifdef GGML_PERF
         chunks_executed++;
 #endif
@@ -18041,7 +18053,11 @@ static void clear_numa_thread_affinity(void) {
 #else
 // TODO: Windows etc.
 // (the linux implementation may also work on BSD, someone should test)
-static void set_numa_thread_affinity(int thread_n) { UNUSED(thread_n);  }
+static void set_numa_thread_affinity(int thread_n) {
+    //Kunnis
+    //SetThreadAffinityMask(GetCurrentThread(), 1 << thread_n * 2);
+    //SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+}
 static void clear_numa_thread_affinity(void) {}
 #endif
 
