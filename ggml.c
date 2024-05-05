@@ -11044,8 +11044,8 @@ UseGgmlGemm2:;
 
     while (checked_out_chunk + checkout_idx < total_chunks)
     {
-        const int64_t ith0 = (checked_out_chunk + checkout_idx) % nchunk0;
-        const int64_t ith1 = (checked_out_chunk + checkout_idx) / nchunk0;
+        const int64_t ith1 = (checked_out_chunk + checkout_idx) % nchunk1;
+        const int64_t ith0 = (checked_out_chunk + checkout_idx) / nchunk1;
 
         const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
         const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
