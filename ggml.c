@@ -65,7 +65,7 @@ static LONG atomic_load(atomic_int * ptr) {
     return InterlockedCompareExchange(ptr, 0, 0);
 }
 static LONG atomic_fetch_add(atomic_int * ptr, LONG inc) {
-    return InterlockedExchangeAdd(ptr, inc);
+    return InterlockedExchangeAddNoFence(ptr, inc);
 }
 static LONG atomic_fetch_sub(atomic_int * ptr, LONG dec) {
     return atomic_fetch_add(ptr, -(dec));
@@ -11082,7 +11082,8 @@ UseGgmlGemm1:;
         if (ith != 0) {
             return;
         }
-        atomic_store(&state->shared->current_chunk, 0);
+        //Every thread starts at ith, so the first unprocessed chunk is nth.  This save a bit of coordination right at the start.
+        atomic_store(&state->shared->current_chunk, nth);
         if (src1->type != vec_dot_type) {
             char * wdata = params->wdata;
             const size_t row_size = ggml_row_size(vec_dot_type, ne10);
@@ -11133,6 +11134,7 @@ UseGgmlGemm2:;
 #endif
 
     int chunk_size = 16;
+
 #ifdef GGML_PERF
     int chunks_executed = 0;
     UNUSED(chunks_executed);
@@ -11159,7 +11161,10 @@ UseGgmlGemm2:;
     //Chunk in both directions.
     const int64_t nchunk1 = (nr1 + chunk_size - 1) / chunk_size;
 
-    int current_chunk = atomic_fetch_add(&state->shared->current_chunk, 1);
+    //printf("MUL_MAT = [%d, %d, %d, %d] x [%d, %d, %d, %d] = %d x %d = %d.\n", ne00, ne01, ne02, ne03, ne10, ne11, ne12, ne13, nchunk0, nchunk1, nchunk0 * nchunk1);
+
+    //The first chunk comes from our thread_id, the rest will get auto-assigned.
+    int current_chunk = ith;
 
     while (current_chunk < nchunk0 * nchunk1)
     {
@@ -11177,10 +11182,14 @@ UseGgmlGemm2:;
 
         ggml_compute_forward_mul_mat_one_chunk(params, dst, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
 
-        current_chunk = atomic_fetch_add(&state->shared->current_chunk, 1);
 #ifdef GGML_PERF
         chunks_executed++;
 #endif
+
+        if (nth >= nchunk0 * nchunk1)
+            break;
+
+        current_chunk = atomic_fetch_add(&state->shared->current_chunk, 1);
     }
 
 #ifdef GGML_PERF
@@ -18379,7 +18388,11 @@ static void clear_numa_thread_affinity(void) {
 #else
 // TODO: Windows etc.
 // (the linux implementation may also work on BSD, someone should test)
-static void set_numa_thread_affinity(int thread_n) { UNUSED(thread_n);  }
+static void set_numa_thread_affinity(int thread_n) {
+    SetThreadAffinityMask(GetCurrentThread(), 1 << (2 * thread_n));
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+}
+
 static void clear_numa_thread_affinity(void) {}
 #endif
 
