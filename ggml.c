@@ -11133,8 +11133,6 @@ UseGgmlGemm1:;
 UseGgmlGemm2:;
 #endif
 
-    int chunk_size = 16;
-
 #ifdef GGML_PERF
     int chunks_executed = 0;
     UNUSED(chunks_executed);
@@ -11154,14 +11152,35 @@ UseGgmlGemm2:;
         num_rows_per_vec_dot = 1;
     }
 
+    //Now select a reasonable chunk size.
+    int chunk_size = 16;
+
+    //We need to step up the size if it's small
+    if (nr0 == 1 || nr1 == 1)
+        chunk_size = 64;
+
     // distribute the work across the inner or outer loop based on which one is larger
     //The number of chunks in the 0/1 dim.
     //CEIL(nr0/chunk_size)
-    const int64_t nchunk0 = (nr0 + chunk_size - 1) / chunk_size;
-    //Chunk in both directions.
-    const int64_t nchunk1 = (nr1 + chunk_size - 1) / chunk_size;
+    int64_t nchunk0 = (nr0 + chunk_size - 1) / chunk_size;
+    int64_t nchunk1 = (nr1 + chunk_size - 1) / chunk_size;
 
-    //printf("MUL_MAT = [%d, %d, %d, %d] x [%d, %d, %d, %d] = %d x %d = %d.\n", ne00, ne01, ne02, ne03, ne10, ne11, ne12, ne13, nchunk0, nchunk1, nchunk0 * nchunk1);
+    //If the chunking is poor for the number of processors on this setup, scrap the whole plan.  Re-chunk it by processor.
+    if (nchunk0 * nchunk1 < nth * 4)
+    {
+        nchunk0 = nr0 > 1 ? nth : 1;
+        nchunk1 = nr1 > 1 ? nth : 1;
+        //Only chunk in one direction when doing this.
+        if (nchunk0 != 1 && nchunk1 != 1)
+            nchunk1 = 1;
+    }
+
+    //The number of elements in each chunk
+    const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
+    const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
+
+    //if (ith == 0)
+    //    printf("MUL_MAT = [%d, %d, %d, %d] x [%d, %d, %d, %d] = %d x %d = %d.  Fp/Ch %d\n", ne00, ne01, ne02, ne03, ne10, ne11, ne12, ne13, nchunk0, nchunk1, nchunk0 * nchunk1, ne00 * nr0 * nr1 / nchunk0 / nchunk1);
 
     //The first chunk comes from our thread_id, the rest will get auto-assigned.
     int current_chunk = ith;
@@ -11170,9 +11189,6 @@ UseGgmlGemm2:;
     {
         const int64_t ith0 = current_chunk % nchunk0;
         const int64_t ith1 = current_chunk / nchunk0;
-
-        const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
-        const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
 
         const int64_t ir0_start = dr0 * ith0;
         const int64_t ir0_end = MIN(ir0_start + dr0, nr0);
